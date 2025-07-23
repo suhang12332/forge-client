@@ -1,0 +1,51 @@
+name: Build & Release Each MC Latest Forge Client (Modrinth API)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Build and release each MC version (release only)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # 获取所有 release 类型的 MC 版本
+          MC_LIST=$(curl -s 'https://api.modrinth.com/v2/tag/game_version' | jq -r '.[] | select(.version_type=="release") | .version')
+          for MC_VERSION in $MC_LIST; do
+            echo "Building $MC_VERSION ..."
+            go run main.go --mc "$MC_VERSION" --latest || { echo "Build failed for $MC_VERSION, skip."; continue; }
+            # 读取 artifacts.txt 第一行
+            line=$(cat artifacts.txt | head -n1)
+            JAR_PATH=$(echo $line | cut -d' ' -f1)
+            MC_VERSION=$(echo $line | cut -d' ' -f2)
+            FORGE_VERSION=$(echo $line | cut -d' ' -f3)
+            # 只处理 -client.jar
+            if [[ "$JAR_PATH" != *-client.jar ]]; then
+              echo "Skip non-client jar: $JAR_PATH"
+              continue
+            fi
+            VERSION_JSON="$(dirname "$JAR_PATH")/version.json"
+            if gh release view "$FORGE_VERSION" > /dev/null 2>&1; then
+              echo "Release $FORGE_VERSION already exists, skip."
+            else
+              echo "Publishing $JAR_PATH and $VERSION_JSON for $MC_VERSION / $FORGE_VERSION"
+              gh release create "$FORGE_VERSION" "$JAR_PATH" "$VERSION_JSON" \
+                --title "$FORGE_VERSION" \
+                --notes "Minecraft: $MC_VERSION\nForge: $FORGE_VERSION"
+            fi
+            # 清理，防止 artifacts.txt 累积
+            rm -f artifacts.txt
+          done
