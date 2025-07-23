@@ -18,6 +18,37 @@ import (
 
 const metaURL = "https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"
 
+// 从 installer jar 解压 version.json 到 outDir
+func extractVersionJson(jarPath, outDir string) error {
+	zipReader, err := zip.OpenReader(jarPath)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+	for _, f := range zipReader.File {
+		if f.Name == "version.json" {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			outPath := filepath.Join(outDir, "version.json")
+			outFile, err := os.Create(outPath)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+			_, err = io.Copy(outFile, rc)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Extracted version.json to %s\n", outPath)
+			return nil
+		}
+	}
+	return fmt.Errorf("version.json not found in %s", jarPath)
+}
+
 // BuildForgeClient 构建指定版本的 Forge 客户端，并返回 client.jar 路径
 func BuildForgeClient(minecraftVersion string, forgeVersion string) (string, error) {
 	fullVersion := forgeVersion
@@ -107,35 +138,6 @@ func BuildForgeClient(minecraftVersion string, forgeVersion string) (string, err
 	fmt.Printf("Successfully copied client jar to %s\n", destPath)
 
 	// 解压 installer jar 里的 version.json 到 client jar 同目录
-	func extractVersionJson(jarPath, outDir string) error {
-		zipReader, err := zip.OpenReader(jarPath)
-		if err != nil {
-			return err
-		}
-		defer zipReader.Close()
-		for _, f := range zipReader.File {
-			if f.Name == "version.json" {
-				rc, err := f.Open()
-				if err != nil {
-					return err
-				}
-				defer rc.Close()
-				outPath := filepath.Join(outDir, "version.json")
-				outFile, err := os.Create(outPath)
-				if err != nil {
-					return err
-				}
-				defer outFile.Close()
-				_, err = io.Copy(outFile, rc)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("Extracted version.json to %s\n", outPath)
-				return nil
-			}
-		}
-		return fmt.Errorf("version.json not found in %s", jarPath)
-	}
 	err = extractVersionJson(installerPath, destDir)
 	if err != nil {
 		fmt.Printf("Warning: %v\n", err)
