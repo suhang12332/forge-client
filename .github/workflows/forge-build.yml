@@ -31,7 +31,7 @@ jobs:
           JAR_PATH=$(echo $line | cut -d' ' -f1)
           MC_VERSION=$(echo $line | cut -d' ' -f2)
           FORGE_VERSION=$(echo $line | cut -d' ' -f3)
-          VERSION_JSON="$(dirname \"$JAR_PATH\")/version.json"
+          VERSION_JSON="$(dirname "$JAR_PATH")/version.json"
           if gh release view $FORGE_VERSION > /dev/null 2>&1; then
             echo "Release $FORGE_VERSION already exists, skip."
           else
