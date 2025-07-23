@@ -1,0 +1,39 @@
+name: Build Forge Client (指定MC版本最新Forge)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mc_version:
+        description: 'Minecraft Version (如 1.20.1)'
+        required: true
+        default: '1.20.1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Forge Client
+        run: |
+          go run main.go --mc ${{ github.event.inputs.mc_version }} --latest
+
+      - name: Publish latest release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          line=$(cat artifacts.txt | head -n1)
+          JAR_PATH=$(echo $line | cut -d' ' -f1)
+          MC_VERSION=$(echo $line | cut -d' ' -f2)
+          FORGE_VERSION=$(echo $line | cut -d' ' -f3)
+          VERSION_JSON="$(dirname \"$JAR_PATH\")/version.json"
+          if gh release view $FORGE_VERSION > /dev/null 2>&1; then
+            echo "Release $FORGE_VERSION already exists, skip."
+          else
+            gh release create $FORGE_VERSION $JAR_PATH $VERSION_JSON --title "$FORGE_VERSION" --notes "Minecraft: $MC_VERSION\nForge: $FORGE_VERSION"
+          fi 
