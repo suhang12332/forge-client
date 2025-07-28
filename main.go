@@ -16,7 +16,7 @@ import (
 	"github.com/hashicorp/go-version"
 )
 
-const metaURL = "https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"
+const metaURL = "https://launcher-meta.modrinth.com/forge/v0/manifest.json"
 
 // 从 installer jar 解压 version.json 到 outDir
 func extractVersionJson(jarPath, outDir string) error {
@@ -110,6 +110,7 @@ func parseClientPath(maven string) (string, error) {
 			ext = tmp[1]
 		} else {
 			classifier = classifierAndExt
+			// 如果没有 @，ext 保持默认的 "jar"
 		}
 	}
 	
@@ -244,7 +245,7 @@ func listDirectory(dir, prefix string, maxDepth int) error {
 
 // BuildForgeClient 构建指定版本的 Forge 客户端，并返回 client.jar 路径
 func BuildForgeClient(minecraftVersion string, forgeVersion string) (string, error) {
-	fullVersion := forgeVersion
+	fullVersion := fmt.Sprintf("%s-%s", minecraftVersion, forgeVersion)
 	buildDir := filepath.Join("build", fullVersion)
 	fmt.Printf("\nBuilding Forge client for Minecraft %s with Forge %s...\n", minecraftVersion, forgeVersion)
 
@@ -377,10 +378,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	var meta map[string][]string
-	if err := json.Unmarshal(body, &meta); err != nil {
+	// 解析 Modrinth manifest.json
+	var manifest struct {
+		GameVersions []struct {
+			ID      string `json:"id"`
+			Loaders []struct {
+				ID string `json:"id"`
+			} `json:"loaders"`
+		} `json:"gameVersions"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
 		fmt.Printf("Error parsing metadata: %v\n", err)
 		os.Exit(1)
+	}
+
+	// 构建 meta map[string][]string
+	meta := make(map[string][]string)
+	for _, v := range manifest.GameVersions {
+		if len(v.Loaders) == 0 {
+			continue
+		}
+		mc := v.ID
+		meta[mc] = []string{v.Loaders[0].ID} // 只取第一个 loader
 	}
 
 	if *mc != "" && *latest {
