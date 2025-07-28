@@ -37,12 +37,14 @@ jobs:
               echo "Skip non-client jar: $JAR_PATH"
               continue
             fi
-            VERSION_JSON="$(dirname "$JAR_PATH")/version.json"
+            # 获取版本目录下的所有文件
+            VERSION_DIR="$(dirname "$JAR_PATH")"
             if gh release view "$FORGE_VERSION" > /dev/null 2>&1; then
               echo "Release $FORGE_VERSION already exists, skip."
             else
-              echo "Publishing $JAR_PATH and $VERSION_JSON for $MC_VERSION / $FORGE_VERSION"
-              gh release create "$FORGE_VERSION" "$JAR_PATH" "$VERSION_JSON" \
+              echo "Publishing all files from $VERSION_DIR for $MC_VERSION / $FORGE_VERSION"
+              # 使用 find 命令获取目录下所有文件，并用 xargs 传递给 gh release create
+              find "$VERSION_DIR" -type f -exec echo {} \; | xargs -I {} gh release create "$FORGE_VERSION" {} \
                 --title "$FORGE_VERSION" \
                 --notes "Minecraft: $MC_VERSION\nForge: $FORGE_VERSION"
             fi
