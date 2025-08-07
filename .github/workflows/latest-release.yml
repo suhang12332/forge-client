@@ -1,0 +1,43 @@
+name: Forge Latest Release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'
+
+jobs:
+  build-and-release-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Build latest version
+        run: |
+          go run main.go --latest
+
+      - name: Publish latest release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          line=$(cat artifacts.txt | head -n1)
+          JAR_PATH=$(echo $line | cut -d' ' -f1)
+          MC_VERSION=$(echo $line | cut -d' ' -f2)
+          FORGE_VERSION=$(echo $line | cut -d' ' -f3)
+          # 获取版本目录下的所有文件
+          VERSION_DIR="$(dirname "$JAR_PATH")"
+          if gh release view $FORGE_VERSION > /dev/null 2>&1; then
+            echo "Release $FORGE_VERSION already exists, skip."
+          else
+            echo "Publishing all files from $VERSION_DIR for $MC_VERSION / $FORGE_VERSION"
+            # 使用 find 命令获取目录下所有文件，并一次性传递给 gh release create
+            find "$VERSION_DIR" -type f -print0 | xargs -0 gh release create $FORGE_VERSION --title "$FORGE_VERSION" --notes "Minecraft: $MC_VERSION\nForge: $FORGE_VERSION"
+          fi 
