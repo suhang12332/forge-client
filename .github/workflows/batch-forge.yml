@@ -34,6 +34,12 @@ jobs:
           echo "$MC_VERSIONS" | while read -r MC_VERSION STABLE; do
             echo "Processing MC version: $MC_VERSION (stable: $STABLE)"
             
+            # 只处理1.20.2及以前的版本
+            if [[ "$(printf '%s\n' "1.20.2" "$MC_VERSION" | sort -V | head -n1)" != "1.20.2" ]]; then
+              echo "Skipping $MC_VERSION (newer than 1.20.2)"
+              continue
+            fi
+            
             # 获取该MC版本下的所有loaders
             LOADERS=$(curl -s "$MANIFEST_URL" | jq -r --arg mc "$MC_VERSION" '.gameVersions[] | select(.id == $mc) | .loaders[].id')
             
@@ -64,6 +70,25 @@ jobs:
               fi
               
               # 获取版本目录下的所有文件
+              VERSION_DIR="$(dirname "$JAR_PATH")"
+              
+              # 使用loader ID作为release tag
+              RELEASE_TAG="$LOADER_ID"
+              
+              if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+                echo "Release $RELEASE_TAG already exists, skip."
+              else
+                echo "Publishing all files from $VERSION_DIR for $MC_VERSION / $LOADER_ID"
+                # 使用 find 命令获取目录下所有文件，并一次性传递给 gh release create
+                find "$VERSION_DIR" -type f -print0 | xargs -0 gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "Minecraft: $MC_VERSION\nForge Loader: $LOADER_ID"
+              fi
+              
+              # 清理，防止 artifacts.txt 累积
+              rm -f artifacts.txt
+              # 删除刚才构建的全部数据
+              rm -rf "$VERSION_DIR"
+            done
+          done
               VERSION_DIR="$(dirname "$JAR_PATH")"
               
               # 使用loader ID作为release tag
