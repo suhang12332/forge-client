@@ -1,0 +1,83 @@
+name: Build & Release Each MC Latest Forge Client (Modrinth API)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Build and release each MC version with all loaders
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # 获取 Modrinth Forge manifest
+          MANIFEST_URL="https://launcher-meta.modrinth.com/forge/v0/manifest.json"
+          echo "Fetching Forge manifest from $MANIFEST_URL"
+          
+          # 获取所有游戏版本并按照版本号排序（从新到旧）
+          echo "Sorting Minecraft versions from newest to oldest..."
+          MC_VERSIONS=$(curl -s "$MANIFEST_URL" | jq -r '.gameVersions[] | "\(.id) \(.stable)"' | sort -V -r)
+          
+          # 遍历所有游戏版本和对应的loaders
+          echo "$MC_VERSIONS" | while read -r MC_VERSION STABLE; do
+            echo "Processing MC version: $MC_VERSION (stable: $STABLE)"
+            
+            # 获取该MC版本下的所有loaders
+            LOADERS=$(curl -s "$MANIFEST_URL" | jq -r --arg mc "$MC_VERSION" '.gameVersions[] | select(.id == $mc) | .loaders[].id')
+            
+            for LOADER_ID in $LOADERS; do
+              echo "Building $MC_VERSION with loader $LOADER_ID ..."
+              
+              # 使用loader ID作为mod版本
+              go run main.go --mc "$MC_VERSION" --forge "$LOADER_ID" || { 
+                echo "Build failed for $MC_VERSION with loader $LOADER_ID, skip."; 
+                continue; 
+              }
+              
+              # 读取 artifacts.txt 第一行
+              if [ ! -f artifacts.txt ]; then
+                echo "No artifacts.txt found for $MC_VERSION with loader $LOADER_ID, skip."
+                continue
+              fi
+              
+              line=$(cat artifacts.txt | head -n1)
+              JAR_PATH=$(echo $line | cut -d' ' -f1)
+              MC_VERSION_FROM_ARTIFACT=$(echo $line | cut -d' ' -f2)
+              FORGE_VERSION=$(echo $line | cut -d' ' -f3)
+              
+              # 只处理 -client.jar
+              if [[ "$JAR_PATH" != *-client.jar ]]; then
+                echo "Skip non-client jar: $JAR_PATH"
+                continue
+              fi
+              
+              # 获取版本目录下的所有文件
+              VERSION_DIR="$(dirname "$JAR_PATH")"
+              
+              # 使用loader ID作为release tag
+              RELEASE_TAG="$LOADER_ID"
+              
+              if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+                echo "Release $RELEASE_TAG already exists, skip."
+              else
+                echo "Publishing all files from $VERSION_DIR for $MC_VERSION / $LOADER_ID"
+                # 使用 find 命令获取目录下所有文件，并一次性传递给 gh release create
+                find "$VERSION_DIR" -type f -print0 | xargs -0 gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "Minecraft: $MC_VERSION\nForge Loader: $LOADER_ID"
+              fi
+              
+              # 清理，防止 artifacts.txt 累积
+              rm -f artifacts.txt
+            done
+          done
